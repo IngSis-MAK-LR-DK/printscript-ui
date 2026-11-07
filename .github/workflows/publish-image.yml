@@ -1,8 +1,9 @@
 # Construye la imagen Docker de la UI.
 #  - En un pull request: solo la construye (detecta un Dockerfile roto antes de mergear).
 #  - Al mergear a master: la construye y la publica en GitHub Container Registry.
-# Los valores VITE_* salen de las variables del repositorio (Settings > Secrets and variables >
-# Actions > Variables). No son secretos: terminan en el JS que baja el navegador.
+# La imagen no lleva configuracion de ningun ambiente: se construye UNA vez y se promueve. Auth0 y
+# la URL del backend entran al arrancar el contenedor como variables de entorno (ver
+# docker-entrypoint.d/40-runtime-config.sh), igual que en el resto de los servicios.
 name: Publish image
 
 on:
@@ -51,10 +52,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VITE_AUTH0_DOMAIN=${{ vars.VITE_AUTH0_DOMAIN }}
-            VITE_AUTH0_CLIENT_ID=${{ vars.VITE_AUTH0_CLIENT_ID }}
-            VITE_AUTH0_AUDIENCE=${{ vars.VITE_AUTH0_AUDIENCE }}
-            VITE_BACKEND_URL=${{ vars.VITE_BACKEND_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

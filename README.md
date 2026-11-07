@@ -55,20 +55,40 @@ To start cypress, make sure that the UI is running and enter:
 npm run cypress
 ```
 
-## Enable Auth0
+## Configuration
 
-This application uses https://www.npmjs.com/package/@auth0/auth0-react library for Auth0 integration, to enable it you need to change:
-* Uncomment autologin in [App.tsx](src/App.tsx)
-* Uncomment token retrieval for operations [queries.tsx](src/utils/queries.tsx) 
-* Create a `.env` file with the required env vars:
-```
-VITE_AUTH0_DOMAIN=<domain>
-VITE_AUTH0_CLIENT_ID=<client_id>
+The UI logs in with Auth0 and talks to the snippet handler. Both are configured **at runtime**, so
+the same Docker image works in every environment (dev, prod): nothing environment-specific is baked
+into the build.
+
+| Docker env var | `npm run dev` (`.env`) | What it is |
+|---|---|---|
+| `AUTH0_DOMAIN` | `VITE_AUTH0_DOMAIN` | Tenant domain, without `https://` |
+| `AUTH0_CLIENT_ID` | `VITE_AUTH0_CLIENT_ID` | Client ID of the Auth0 *Single Page Application* |
+| `AUTH0_AUDIENCE` | `VITE_AUTH0_AUDIENCE` | Identifier of the `snippet-searcher` API |
+| `BACKEND_URL` | `VITE_BACKEND_URL` | Public URL of the snippet handler, without trailing slash |
+
+For local development create a `.env` file with the `VITE_*` variables (`VITE_BACKEND_URL` defaults
+to `http://localhost:8080`).
+
+With Docker, pass the first column; the container refuses to start if one is missing:
+
+```bash
+docker run -p 80:80 \
+  -e AUTH0_DOMAIN=<tenant>.us.auth0.com -e AUTH0_CLIENT_ID=<client_id> \
+  -e AUTH0_AUDIENCE=<api_identifier> -e BACKEND_URL=http://localhost:8080 \
+  ghcr.io/ingsis-mak-lr-dk/printscript-ui:latest
 ```
 
-If you get 401 loop when getting token:
+At startup `docker-entrypoint.d/40-runtime-config.sh` writes `/config.js` from those variables, and
+`src/config.ts` reads it. None of them is a secret: they end up in the JavaScript the browser downloads.
+
+The URL where the UI is served must be listed in the Auth0 application as an allowed callback URL,
+logout URL and web origin.
+
+If you get a 401 loop when getting the token:
 * Change application type in Auth0 to "Regular Web Application"
-* In Application Settings > Credentials > "Authentication Method" select "None" 
+* In Application Settings > Credentials > "Authentication Method" select "None"
 
 ## Start working
 
