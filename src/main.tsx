@@ -5,15 +5,16 @@ import {createRoot} from "react-dom/client";
 import {PaginationProvider} from "./contexts/paginationProvider.tsx";
 import {SnackbarProvider} from "./contexts/snackbarProvider.tsx";
 import {Auth0Provider} from "@auth0/auth0-react";
+import {config} from "./config.ts";
 
 createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <Auth0Provider
-            domain={import.meta.env.VITE_AUTH0_DOMAIN ?? ""}
-            clientId={import.meta.env.VITE_AUTH0_CLIENT_ID ?? ""}
+            domain={config.auth0Domain}
+            clientId={config.auth0ClientId}
             authorizationParams={{
                 redirect_uri: window.location.origin,
-                audience: import.meta.env.VITE_AUTH0_AUDIENCE
+                audience: config.auth0Audience
             }}
         >
             <PaginationProvider>
