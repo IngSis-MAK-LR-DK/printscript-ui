@@ -1,9 +1,10 @@
-import {useMemo} from 'react';
+import {useCallback, useMemo} from 'react';
 import {useMutation, UseMutationResult, useQuery} from 'react-query';
 import {useAuth0} from "@auth0/auth0-react";
 import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet.ts';
 import {DownloadedSnippet, RevalidationRun, SnippetOperations} from "./snippetOperations.ts";
 import {HttpSnippetOperations} from "./http/HttpSnippetOperations.ts";
+import {openSnippetRun, RunHandlers, RunStart} from "./http/snippetRunSocket.ts";
 import {PaginatedUsers} from "./users.ts";
 import {TestCase, TestRunResult} from "../types/TestCase.ts";
 import {FileType} from "../types/FileType.ts";
@@ -99,6 +100,17 @@ export const useRemoveTestCase = (snippetId: string, {onSuccess}: {onSuccess: ()
       {
         onSuccess,
       }
+  );
+};
+
+/** Opens a streamed run of a snippet (US 9 and 10): see utils/http/snippetRunSocket.ts. */
+export const useSnippetRun = () => {
+  const {getAccessTokenSilently} = useAuth0();
+
+  return useCallback(
+      (snippetId: string, start: RunStart, handlers: RunHandlers) =>
+          openSnippetRun(BACKEND_URL, () => getAccessTokenSilently(), snippetId, start, handlers),
+      [getAccessTokenSilently]
   );
 };
 
