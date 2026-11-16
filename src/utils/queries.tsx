@@ -6,7 +6,7 @@ import {DownloadedSnippet, RevalidationRun, SnippetOperations} from "./snippetOp
 import {HttpSnippetOperations} from "./http/HttpSnippetOperations.ts";
 import {openSnippetRun, RunHandlers, RunStart} from "./http/snippetRunSocket.ts";
 import {PaginatedUsers} from "./users.ts";
-import {TestCase, TestRunResult} from "../types/TestCase.ts";
+import {TestCase} from "../types/TestCase.ts";
 import {FileType} from "../types/FileType.ts";
 import {Rule} from "../types/Rule.ts";
 import {config} from "../config.ts";
@@ -113,18 +113,6 @@ export const useSnippetRun = () => {
       [getAccessTokenSilently]
   );
 };
-
-export type TestCaseResult = "success" | "fail"
-
-export const useTestSnippet = (snippetId: string) => {
-  const snippetOperations = useSnippetsOperations()
-
-  return useMutation<TestRunResult, Error, Partial<TestCase>>(
-      (tc) => snippetOperations.testSnippet(snippetId, tc)
-  )
-}
-
-
 
 export const useGetFormatRules = () => {
   const snippetOperations = useSnippetsOperations()

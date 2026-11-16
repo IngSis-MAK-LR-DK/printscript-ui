@@ -1,8 +1,7 @@
-import axios, {AxiosInstance, AxiosResponse} from "axios";
 import {CreateSnippet, ComplianceEnum, LintViolation, PaginatedSnippets, Snippet, UpdateSnippet} from "../snippet.ts";
 import {DownloadedSnippet, RevalidationRun, SnippetOperations} from "../snippetOperations.ts";
 import {PaginatedUsers, User} from "../users.ts";
-import {TestCase, TestRunResult, TestStatus} from "../../types/TestCase.ts";
+import {TestCase, TestStatus} from "../../types/TestCase.ts";
 import {FileType} from "../../types/FileType.ts";
 import {Rule} from "../../types/Rule.ts";
 
@@ -37,14 +36,6 @@ type TestCaseViewDto = {
   inputs: string[]
   expectedOutputs: string[]
   lastStatus: TestStatus
-}
-
-type TestRunResultDto = {
-  testId: string | null
-  status: TestStatus
-  outputs: string[]
-  expectedOutputs: string[]
-  errors: string[]
 }
 
 type LanguageInfoDto = { name: string, versions: string[], fileExtension: string }
@@ -101,14 +92,6 @@ const toTestCase = (dto: TestCaseViewDto): TestCase => ({
   lastStatus: dto.lastStatus,
 })
 
-const toTestRunResult = (dto: TestRunResultDto): TestRunResult => ({
-  testId: dto.testId ?? undefined,
-  status: dto.status,
-  outputs: dto.outputs,
-  expectedOutputs: dto.expectedOutputs,
-  errors: dto.errors,
-})
-
 const toRevalidationRun = (dto: RevalidationRunDto): RevalidationRun => dto
 
 /** Filename from a Content-Disposition header, e.g. attachment; filename*=UTF-8''name.ps */
@@ -127,39 +110,49 @@ export class HttpError extends Error {
   }
 }
 
-const errorMessage = (error: unknown): HttpError => {
-  if (axios.isAxiosError(error)) {
-    const detail = (error.response?.data as { detail?: string } | undefined)?.detail
-    return new HttpError(detail ?? error.message, error.response?.status)
-  }
-  return error instanceof HttpError ? error : new HttpError(String(error))
-}
+type Params = Record<string, string | number | boolean>
+
+type RequestOptions = { params?: Params, body?: unknown }
 
 /**
- * Talks to snippet-handler. Every request carries the Auth0 access token obtained through the
- * given function, so the backend can authenticate the user.
+ * Talks to snippet-handler with the browser's fetch. Every request carries the Auth0 access token
+ * obtained through the given function, so the backend can authenticate the user.
  */
 export class HttpSnippetOperations implements SnippetOperations {
-  private readonly http: AxiosInstance
 
-  constructor(baseURL: string, getAccessToken: () => Promise<string>) {
-    this.http = axios.create({baseURL})
-    this.http.interceptors.request.use(async (config) => {
-      config.headers.Authorization = `Bearer ${await getAccessToken()}`
-      return config
-    })
+  constructor(private readonly baseURL: string, private readonly getAccessToken: () => Promise<string>) {}
+
+  /** Sends the request and fails with an HttpError (the backend's "detail" if any) unless it is 2xx. */
+  private async send(method: string, path: string, {params, body}: RequestOptions = {}): Promise<Response> {
+    const query = params ? `?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))}` : ""
+    const headers: Record<string, string> = {Authorization: `Bearer ${await this.getAccessToken()}`}
+    if (body !== undefined) headers["Content-Type"] = "application/json"
+    let response: Response
+    try {
+      response = await fetch(`${this.baseURL}${path}${query}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+    } catch (error) {
+      throw new HttpError(error instanceof Error ? error.message : String(error))
+    }
+    if (!response.ok) {
+      const detail = await response.json().then((json: { detail?: string }) => json.detail).catch(() => undefined)
+      throw new HttpError(detail ?? `Request failed with status code ${response.status}`, response.status)
+    }
+    return response
   }
 
-  private async call<T>(request: () => Promise<AxiosResponse<T>>): Promise<T> {
-    try {
-      return (await request()).data
-    } catch (error) {
-      throw errorMessage(error)
-    }
+  /** The JSON body of the response; undefined when there is none (204). */
+  private async call<T>(method: string, path: string, options?: RequestOptions): Promise<T> {
+    const response = await this.send(method, path, options)
+    const text = await response.text()
+    return (text ? JSON.parse(text) : undefined) as T
   }
 
   async listSnippetDescriptors(page: number, pageSize: number, snippetName?: string, compliance?: ComplianceEnum): Promise<PaginatedSnippets> {
-    const pageDto = await this.call(() => this.http.get<PageDto<SnippetDto>>("/snippets", {
+    const pageDto = await this.call<PageDto<SnippetDto>>("GET", "/snippets", {
       params: {
         relation: "ALL",
         page,
@@ -168,7 +161,7 @@ export class HttpSnippetOperations implements SnippetOperations {
         ...(snippetName ? {name: snippetName} : {}),
         ...(compliance ? {compliance: COMPLIANCE_FILTER[compliance]} : {}),
       },
-    }))
+    })
     return {
       page: pageDto.number,
       page_size: pageDto.size,
@@ -181,20 +174,21 @@ export class HttpSnippetOperations implements SnippetOperations {
     if (!createSnippet.version) {
       throw new Error("Choose a language version before saving")
     }
-    const dto = await this.call(() => this.http.post<SnippetDto>("/snippets", {
-      name: createSnippet.name,
-      description: createSnippet.description ?? null,
-      language: createSnippet.language,
-      version: createSnippet.version,
-      content: createSnippet.content,
-    }))
+    const dto = await this.call<SnippetDto>("POST", "/snippets", {
+      body: {
+        name: createSnippet.name,
+        description: createSnippet.description ?? null,
+        language: createSnippet.language,
+        version: createSnippet.version,
+        content: createSnippet.content,
+      },
+    })
     return toSnippet(dto, createSnippet.content)
   }
 
   async getSnippetById(id: string): Promise<Snippet | undefined> {
     try {
-      const dto = await this.call(() => this.http.get<SnippetDto>(`/snippets/${id}`))
-      return toSnippet(dto)
+      return toSnippet(await this.call<SnippetDto>("GET", `/snippets/${id}`))
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return undefined
       throw error
@@ -202,32 +196,32 @@ export class HttpSnippetOperations implements SnippetOperations {
   }
 
   async updateSnippetById(id: string, updateSnippet: UpdateSnippet): Promise<Snippet> {
-    const dto = await this.call(() => this.http.put<SnippetDto>(`/snippets/${id}`, {content: updateSnippet.content}))
+    const dto = await this.call<SnippetDto>("PUT", `/snippets/${id}`, {body: {content: updateSnippet.content}})
     return toSnippet(dto, updateSnippet.content)
   }
 
   async getUserFriends(name: string = "", page: number = 0, pageSize: number = 10): Promise<PaginatedUsers> {
-    const users = await this.call(() => this.http.get<{id: string, name: string}[]>("/users", {
+    const users = await this.call<{id: string, name: string}[]>("GET", "/users", {
       params: {query: name, page, size: pageSize},
-    }))
+    })
     const mapped: User[] = users.map((u) => ({id: u.id, name: u.name}))
     return {page, page_size: pageSize, count: mapped.length, users: mapped}
   }
 
   async shareSnippet(snippetId: string, userId: string): Promise<Snippet> {
-    await this.call(() => this.http.post(`/snippets/${snippetId}/share`, {userId}))
+    await this.call("POST", `/snippets/${snippetId}/share`, {body: {userId}})
     const snippet = await this.getSnippetById(snippetId)
     if (!snippet) throw new Error("Snippet not found after sharing")
     return snippet
   }
 
   async getFormatRules(): Promise<Rule[]> {
-    const rules = await this.call(() => this.http.get<RuleViewDto[]>("/rules/format", {params: {language: RULES_LANGUAGE}}))
+    const rules = await this.call<RuleViewDto[]>("GET", "/rules/format", {params: {language: RULES_LANGUAGE}})
     return rules.map(toRule)
   }
 
   async getLintingRules(): Promise<Rule[]> {
-    const rules = await this.call(() => this.http.get<RuleViewDto[]>("/rules/lint", {params: {language: RULES_LANGUAGE}}))
+    const rules = await this.call<RuleViewDto[]>("GET", "/rules/lint", {params: {language: RULES_LANGUAGE}})
     return rules.map(toRule)
   }
 
@@ -240,25 +234,26 @@ export class HttpSnippetOperations implements SnippetOperations {
   }
 
   private async saveRules(path: string, rules: Rule[]): Promise<Rule[]> {
-    const saved = await this.call(() => this.http.put<RuleViewDto[]>(path, rules.map((rule) => ({
-      name: rule.name,
-      enabled: rule.isActive,
-      value: rule.value == null ? null : String(rule.value),
-    })), {params: {language: RULES_LANGUAGE}}))
+    const saved = await this.call<RuleViewDto[]>("PUT", path, {
+      params: {language: RULES_LANGUAGE},
+      body: rules.map((rule) => ({
+        name: rule.name,
+        enabled: rule.isActive,
+        value: rule.value == null ? null : String(rule.value),
+      })),
+    })
     return saved.map(toRule)
   }
 
   async formatSnippet(snippetContent: string, language: string, version: string): Promise<string> {
-    const result = await this.call(() => this.http.post<{content: string}>("/snippets/format", {
-      language,
-      version,
-      content: snippetContent,
-    }))
+    const result = await this.call<{content: string}>("POST", "/snippets/format", {
+      body: {language, version, content: snippetContent},
+    })
     return result.content
   }
 
   async getTestCases(snippetId: string): Promise<TestCase[]> {
-    const tests = await this.call(() => this.http.get<TestCaseViewDto[]>(`/snippets/${snippetId}/tests`))
+    const tests = await this.call<TestCaseViewDto[]>("GET", `/snippets/${snippetId}/tests`)
     return tests.map(toTestCase)
   }
 
@@ -269,59 +264,41 @@ export class HttpSnippetOperations implements SnippetOperations {
       expectedOutputs: testCase.output ?? [],
     }
     const dto = testCase.id
-      ? await this.call(() => this.http.put<TestCaseViewDto>(`/snippets/${snippetId}/tests/${testCase.id}`, body))
-      : await this.call(() => this.http.post<TestCaseViewDto>(`/snippets/${snippetId}/tests`, body))
+      ? await this.call<TestCaseViewDto>("PUT", `/snippets/${snippetId}/tests/${testCase.id}`, {body})
+      : await this.call<TestCaseViewDto>("POST", `/snippets/${snippetId}/tests`, {body})
     return toTestCase(dto)
   }
 
   async removeTestCase(snippetId: string, testId: string): Promise<string> {
-    await this.call(() => this.http.delete(`/snippets/${snippetId}/tests/${testId}`))
+    await this.call("DELETE", `/snippets/${snippetId}/tests/${testId}`)
     return testId
   }
 
-  async testSnippet(snippetId: string, testCase: Partial<TestCase>): Promise<TestRunResult> {
-    const dto = testCase.id
-        ? await this.call(() => this.http.post<TestRunResultDto>(`/snippets/${snippetId}/tests/${testCase.id}/run`))
-        : await this.call(() => this.http.post<TestRunResultDto>(`/snippets/${snippetId}/tests/preview`, {
-          name: testCase.name ?? "draft",
-          inputs: testCase.input ?? [],
-          expectedOutputs: testCase.output ?? [],
-        }))
-    return toTestRunResult(dto)
-  }
-
   async deleteSnippet(id: string): Promise<string> {
-    await this.call(() => this.http.delete(`/snippets/${id}`))
+    await this.call("DELETE", `/snippets/${id}`)
     return id
   }
 
   async downloadSnippet(id: string, formatted: boolean): Promise<DownloadedSnippet> {
-    const response = await this.http.get<Blob>(`/snippets/${id}/download`, {
-      params: {formatted},
-      responseType: "blob",
-    }).catch((error) => {
-      throw errorMessage(error)
-    })
+    const response = await this.send("GET", `/snippets/${id}/download`, {params: {formatted}})
     return {
-      blob: response.data,
-      filename: filenameOf(response.headers["content-disposition"], `${id}.txt`),
+      blob: await response.blob(),
+      filename: filenameOf(response.headers.get("content-disposition") ?? undefined, `${id}.txt`),
     }
   }
 
   async getFileTypes(): Promise<FileType[]> {
-    const languages = await this.call(() => this.http.get<LanguageInfoDto[]>("/languages"))
+    const languages = await this.call<LanguageInfoDto[]>("GET", "/languages")
     return languages.map((l) => ({language: l.name, extension: l.fileExtension, versions: l.versions}))
   }
 
   async startRevalidation(language: string, version: string): Promise<RevalidationRun> {
-    const dto = await this.call(() => this.http.post<RevalidationRunDto>(
-        `/languages/${language}/versions/${version}/revalidate`
-    ))
+    const dto = await this.call<RevalidationRunDto>("POST", `/languages/${language}/versions/${version}/revalidate`)
     return toRevalidationRun(dto)
   }
 
   async getRevalidation(runId: string): Promise<RevalidationRun> {
-    const dto = await this.call(() => this.http.get<RevalidationRunDto>(`/languages/revalidations/${runId}`))
+    const dto = await this.call<RevalidationRunDto>("GET", `/languages/revalidations/${runId}`)
     return toRevalidationRun(dto)
   }
 }

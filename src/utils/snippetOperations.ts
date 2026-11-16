@@ -1,6 +1,6 @@
 import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet'
 import {PaginatedUsers} from "./users.ts";
-import {TestCase, TestRunResult} from "../types/TestCase.ts";
+import {TestCase} from "../types/TestCase.ts";
 import {FileType} from "../types/FileType.ts";
 import {Rule} from "../types/Rule.ts";
 
@@ -48,7 +48,6 @@ export interface SnippetOperations {
 
   removeTestCase(snippetId: string, testId: string): Promise<string>
 
-  testSnippet(snippetId: string, testCase: Partial<TestCase>): Promise<TestRunResult>
 
   deleteSnippet(id: string): Promise<string>
 
