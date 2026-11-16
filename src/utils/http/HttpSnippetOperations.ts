@@ -1,5 +1,5 @@
 import {CreateSnippet, ComplianceEnum, LintViolation, PaginatedSnippets, Snippet, UpdateSnippet} from "../snippet.ts";
-import {DownloadedSnippet, RevalidationRun, SnippetOperations} from "../snippetOperations.ts";
+import {DownloadedSnippet, SnippetOperations} from "../snippetOperations.ts";
 import {PaginatedUsers, User} from "../users.ts";
 import {TestCase, TestStatus} from "../../types/TestCase.ts";
 import {FileType} from "../../types/FileType.ts";
@@ -39,16 +39,6 @@ type TestCaseViewDto = {
 }
 
 type LanguageInfoDto = { name: string, versions: string[], fileExtension: string }
-
-type RevalidationRunDto = {
-  id: string
-  language: string
-  version: string
-  status: "RUNNING" | "COMPLETED"
-  total: number
-  processed: number
-  failed: number
-}
 
 const COMPLIANCE: Record<SnippetDto["compliance"], ComplianceEnum> = {
   PENDING: "pending",
@@ -91,8 +81,6 @@ const toTestCase = (dto: TestCaseViewDto): TestCase => ({
   output: dto.expectedOutputs,
   lastStatus: dto.lastStatus,
 })
-
-const toRevalidationRun = (dto: RevalidationRunDto): RevalidationRun => dto
 
 /** Filename from a Content-Disposition header, e.g. attachment; filename*=UTF-8''name.ps */
 const filenameOf = (header: string | undefined, fallback: string): string => {
@@ -290,15 +278,5 @@ export class HttpSnippetOperations implements SnippetOperations {
   async getFileTypes(): Promise<FileType[]> {
     const languages = await this.call<LanguageInfoDto[]>("GET", "/languages")
     return languages.map((l) => ({language: l.name, extension: l.fileExtension, versions: l.versions}))
-  }
-
-  async startRevalidation(language: string, version: string): Promise<RevalidationRun> {
-    const dto = await this.call<RevalidationRunDto>("POST", `/languages/${language}/versions/${version}/revalidate`)
-    return toRevalidationRun(dto)
-  }
-
-  async getRevalidation(runId: string): Promise<RevalidationRun> {
-    const dto = await this.call<RevalidationRunDto>("GET", `/languages/revalidations/${runId}`)
-    return toRevalidationRun(dto)
   }
 }

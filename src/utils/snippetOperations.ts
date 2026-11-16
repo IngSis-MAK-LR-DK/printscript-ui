@@ -9,16 +9,6 @@ export type DownloadedSnippet = {
   filename: string
 }
 
-export type RevalidationRun = {
-  id: string
-  language: string
-  version: string
-  status: 'RUNNING' | 'COMPLETED'
-  total: number
-  processed: number
-  failed: number
-}
-
 export interface SnippetOperations {
   listSnippetDescriptors(page: number, pageSize: number, snippetName?: string, compliance?: ComplianceEnum): Promise<PaginatedSnippets>
 
@@ -54,8 +44,4 @@ export interface SnippetOperations {
   downloadSnippet(id: string, formatted: boolean): Promise<DownloadedSnippet>
 
   getFileTypes(): Promise<FileType[]>
-
-  startRevalidation(language: string, version: string): Promise<RevalidationRun>
-
-  getRevalidation(runId: string): Promise<RevalidationRun>
 }
