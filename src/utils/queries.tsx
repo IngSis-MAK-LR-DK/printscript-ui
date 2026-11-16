@@ -2,11 +2,11 @@ import {useCallback, useMemo} from 'react';
 import {useMutation, UseMutationResult, useQuery} from 'react-query';
 import {useAuth0} from "@auth0/auth0-react";
 import {ComplianceEnum, CreateSnippet, PaginatedSnippets, Snippet, UpdateSnippet} from './snippet.ts';
-import {DownloadedSnippet, RevalidationRun, SnippetOperations} from "./snippetOperations.ts";
+import {DownloadedSnippet, SnippetOperations} from "./snippetOperations.ts";
 import {HttpSnippetOperations} from "./http/HttpSnippetOperations.ts";
 import {openSnippetRun, RunHandlers, RunStart} from "./http/snippetRunSocket.ts";
 import {PaginatedUsers} from "./users.ts";
-import {TestCase, TestRunResult} from "../types/TestCase.ts";
+import {TestCase} from "../types/TestCase.ts";
 import {FileType} from "../types/FileType.ts";
 import {Rule} from "../types/Rule.ts";
 import {config} from "../config.ts";
@@ -114,18 +114,6 @@ export const useSnippetRun = () => {
   );
 };
 
-export type TestCaseResult = "success" | "fail"
-
-export const useTestSnippet = (snippetId: string) => {
-  const snippetOperations = useSnippetsOperations()
-
-  return useMutation<TestRunResult, Error, Partial<TestCase>>(
-      (tc) => snippetOperations.testSnippet(snippetId, tc)
-  )
-}
-
-
-
 export const useGetFormatRules = () => {
   const snippetOperations = useSnippetsOperations()
 
@@ -190,23 +178,4 @@ export const useGetFileTypes = () => {
   const snippetOperations = useSnippetsOperations()
 
   return useQuery<FileType[], Error>('fileTypes', () => snippetOperations.getFileTypes());
-}
-
-export const useStartRevalidation = () => {
-  const snippetOperations = useSnippetsOperations()
-
-  return useMutation<RevalidationRun, Error, {language: string; version: string}>(
-      ({language, version}) => snippetOperations.startRevalidation(language, version)
-  );
-}
-
-/** Polls the run every 2 seconds until the caller disables it (once it completed). */
-export const useGetRevalidation = (runId: string | undefined, polling: boolean) => {
-  const snippetOperations = useSnippetsOperations()
-
-  return useQuery<RevalidationRun, Error>(
-      ['revalidation', runId],
-      () => snippetOperations.getRevalidation(runId ?? ""),
-      {enabled: !!runId, refetchInterval: polling ? 2000 : false}
-  );
 }
