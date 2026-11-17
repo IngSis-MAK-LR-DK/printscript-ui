@@ -21,11 +21,10 @@ type SnippetDto = {
   content?: string
 }
 
+// Formato de Spring Data (VIA_DTO): los datos de la pagina vienen en "page".
 type PageDto<T> = {
   content: T[]
-  totalElements: number
-  number: number
-  size: number
+  page: { size: number, number: number, totalElements: number }
 }
 
 type RuleViewDto = { name: string, description: string, enabled: boolean, value: string | null }
@@ -151,9 +150,9 @@ export class HttpSnippetOperations implements SnippetOperations {
       },
     })
     return {
-      page: pageDto.number,
-      page_size: pageDto.size,
-      count: pageDto.totalElements,
+      page: pageDto.page.number,
+      page_size: pageDto.page.size,
+      count: pageDto.page.totalElements,
       snippets: pageDto.content.map((dto) => toSnippet(dto)),
     }
   }
